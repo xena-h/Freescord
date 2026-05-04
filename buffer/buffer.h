@@ -43,7 +43,7 @@ typedef struct buffer buffer;
  * associées au fichier fd */
 buffer *buff_create(int fd, size_t buffsz);
 
-
+/* Remplit le buffer interne depuis le fd */
 int remplir_buff(buffer *b);
 
 /** Retourner le prochain caractère à lire ou EOF (-1) si la fin

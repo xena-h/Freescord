@@ -32,7 +32,6 @@ struct user *user_accept(int sl)
 
 
 /** libérer toute la mémoire associée à user */
-
 void user_free(struct user *user)
 {
 	if(!user) return;

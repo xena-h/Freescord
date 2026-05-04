@@ -11,19 +11,12 @@ Ce travail a été réalisé intégralement par un être humain. */
 
 #define BUFSZ 512
 
-/*	char buff[512] (tampon)
-	la position du curseur dans le buffer
-	la taille du buffer (s'il est plein ou si j'ai tout lu)
-	has_ungetc_char pour savoir si je dois remettre un caractère dans le buffer 
-	char ungetc_char pour remettre un caractère dans le buffer
-*/
-
 struct buffer {
 	int fd;
 	char buff[BUFSZ];
 	int pos_curseur;
 	int taille_buffer;
-	int has_ungetc; //un caractère en attente
+	int has_ungetc; 
 	char ungetc_char; 
 	int eof;
 };
@@ -41,58 +34,6 @@ buffer *buff_create(int fd, size_t buffsz)
 	return b;
 }
 
-// int buff_getc(buffer *b)
-// {
-// 	ssize_t n;
-	
-// 	//si un caractère a été remis avec un ungetc
-// 	if(b->has_ungetc){
-// 		b->has_ungetc = 0;
-// 		return b->ungetc_char;
-// 	}
-
-// 	//si on atteint la taille du buffer
-// 	if(b->pos_curseur >= b->taille_buffer)
-// 	{
-// 		if((n=read(b->fd,b->buff,sizeof(b->buff)))<=0)
-// 		{
-// 			return EOF;
-// 		}
-// 		b->pos_curseur=0;
-// 		b->taille_buffer=n; //nb d'octets lus
-// 	}
-// 	return b->buff[b->pos_curseur++]; //renvoie l'octet suivant
-// }
-
-
-// //version 3
-// int buff_getc(buffer *b)
-// {
-//     if(b->has_ungetc){
-//         b->has_ungetc = 0;
-//         return b->ungetc_char;
-//     }
-
-//     if(b->pos_curseur >= b->taille_buffer)
-//     {
-//         if(b->eof) return EOF;
-
-//         ssize_t n = read(b->fd, b->buff, sizeof(b->buff));
-
-// 		if(n < 0){
-//             if(errno == EAGAIN || errno == EWOULDBLOCK) return EOF;
-//             perror("read"); return EOF;
-//         }
-//         if(n == 0){ b->eof = 1; return EOF; }
-
-//         b->pos_curseur = 0;
-//         b->taille_buffer = (int)n; 
-//     }
-//     return (unsigned char)b->buff[b->pos_curseur++];
-// }
-
-
-//Remplit le buffer interne depuis le fd (appelé uniquement après POLLIN)
 int remplir_buff(buffer *b)
 {
     ssize_t n = read(b->fd, b->buff, sizeof(b->buff));
@@ -103,15 +44,13 @@ int remplir_buff(buffer *b)
     return (int)n;
 }
 
-//version 4
-// buff_getc ne fait PLUS jamais de read()
 int buff_getc(buffer *b)
 {
     if(b->has_ungetc){
         b->has_ungetc = 0;
         return b->ungetc_char;
     }
-    // buffer vide → EOF, sans appel read()
+    
     if(b->pos_curseur >= b->taille_buffer) return EOF;
 
     return (unsigned char)b->buff[b->pos_curseur++];
@@ -120,8 +59,9 @@ int buff_getc(buffer *b)
 
 int buff_ungetc(buffer *b, int c)
 {
-	//s'il y a déjà une caractère en attente => impossible de mettre un autre en attente
+	//s'il y a déjà un caractère en attente => impossible de mettre un autre caractère en attente
 	if(b->has_ungetc) return -1;
+
 	//sinon je marque qu'un caractère a été mis en attente 
 	b->has_ungetc = 1;
 	b->ungetc_char = (char) c;
@@ -135,8 +75,6 @@ void buff_free(buffer *b)
 
 int buff_eof(const buffer *buff)
 {
-	// if(buff->has_ungetc) return 0;
-	// return buff->pos_curseur == buff->taille_buffer ? 1 : 0;
 	return buff->eof;
 }
 
@@ -154,13 +92,11 @@ char *buff_fgets(buffer *b, char *dest, size_t size)
 	while(i < size-1)
 	{
         c = buff_getc(b);
-		//fin de fichier ou aucun caractère lu 
 		if(c == EOF)
 		{
            if(i==0) return NULL;
 		   break;
 		} 
-		//dest contient le caractère du buffer
 		dest[i++]= (char) c;
 		if(c == '\n') break;
 	}
@@ -177,7 +113,6 @@ char *buff_fgets_crlf(buffer *b, char *dest, size_t size)
 	while(i<size-1)
 	{
 		c = buff_getc(b);
-		//fin de fichier
 		if(c == EOF)
 		{
 			//aucun caractère n'a été lu
@@ -196,7 +131,7 @@ char *buff_fgets_crlf(buffer *b, char *dest, size_t size)
 				break;
 			}
 			else if(c_next !=  EOF){
-				//comme je récupère le prochain caractère (c_next = buff_getc(b)), je dois le remettre dans le buffer si ce n'est pas EOF
+				//comme je récupère le prochain caractère (c_next = buff_getc(b)), je dois le remettre dans le buffer si ce n'est pas la fin du fichier
 				buff_ungetc(b,c_next);
 			}
 		}
