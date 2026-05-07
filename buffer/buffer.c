@@ -31,6 +31,8 @@ buffer *buff_create(int fd, size_t buffsz)
 	b->ungetc_char = 0;
 	b->fd =fd;
 	b->eof=0;
+	
+	remplir_buff(b);
 	return b;
 }
 
@@ -51,7 +53,14 @@ int buff_getc(buffer *b)
         return b->ungetc_char;
     }
     
-    if(b->pos_curseur >= b->taille_buffer) return EOF;
+    if(b->pos_curseur >= b->taille_buffer)
+	{
+		if(b->eof) return EOF;
+
+		int n = remplir_buff(b);
+		if(n<=0) return EOF;
+
+	}
 
     return (unsigned char)b->buff[b->pos_curseur++];
 }
@@ -75,6 +84,7 @@ void buff_free(buffer *b)
 
 int buff_eof(const buffer *buff)
 {
+	if(buff->has_ungetc) return 0;
 	return buff->eof;
 }
 
