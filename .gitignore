@@ -1,0 +1,4 @@
+*.o
+clt
+srv
+user
