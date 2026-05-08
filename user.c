@@ -35,7 +35,11 @@ struct user *user_accept(int sl)
 void user_free(struct user *user)
 {
 	if(!user) return;
-	close(user->sock);
-	free(user->nickname);
+	if(user->nickname)
+	{
+		free(user->nickname);
+		user->nickname=NULL;
+	}
+	if(user->sock >= 0) close(user->sock);
 	free(user);
 }
