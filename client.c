@@ -13,6 +13,7 @@ Ce travail a été réalisé intégralement par un être humain. */
 #include <string.h>
 #include "buffer/buffer.h"
 #include "utils.h"
+#include <errno.h>
 
 #define PORT_FREESCORD 4321
 #define BUFSZ 1024
@@ -91,45 +92,49 @@ int main(int argc, char *argv[])
         if(n_events < 0){ perror("poll"); break; }
         
         // Serveur => Affichage 
-        if (n_events > 0 && (fds[0].revents & (POLLIN | POLLHUP)))
+        if (fds[0].revents & POLLIN)
         {
-            // On remplit le buffer uniquement quand poll dit qu'il y a des données
-            if(remplir_buff(b) <= 0){ printf("Serveur fermé\n"); break; }
+            if(remplir_buff(b) <= 0)
+            { 
+                printf("Serveur fermé\n"); 
+                break; 
+            }
         }
 
         if(buff_ready(b))
         {
-            int l = 0;
-            while(buff_fgets_crlf(b, line, sizeof(line)) != NULL)
-            {
+            while(buff_ready(b) && buff_fgets_crlf(b, line, sizeof(line)) != NULL){
                 char *converted = crlf_to_lf(line);
-                if(converted){ write(1, converted, strlen(converted)); free(converted); }
-                l=1;
-            }
-            // ligne partielle dans le buffer => poll bloquera sur la socket
-            if(!l && buff_ready(b))
-            {
-                poll(fds,1,-1); //attend le socket
-                continue;
+                if(converted)
+                { 
+                    write(1, converted, strlen(converted)); 
+                    free(converted); 
+                }
             }
         }
 
-        // Clavier => Envoi 
-        if(n_events > 0 && (fds[1].revents & (POLLIN | POLLHUP)))
+        // Clavier 
+        if (fds[1].revents & POLLIN)
         {
             ssize_t n = read(0, line, sizeof(line));
-            if(n <= 0){ printf("Vous avez quitté Fresscord !\n"); break; }
+            if(n <= 0)
+            { 
+                printf("Au revoir !\n"); 
+                break; 
+            }
             line[n] = '\0';
 
             char *converted = lf_to_crlf(line);
-            if(!converted){ fprintf(stderr, "lf_to_crlf : erreur\n"); break; }
+            if(!converted)
+            { 
+                fprintf(stderr, "Erreur conversion\n"); 
+                break; 
+            }
 
-            int ret = envoyer(sock, converted, (ssize_t)strlen(converted));
+            envoyer(sock, converted, (ssize_t)strlen(converted));
             free(converted);
-            if(ret < 0) break;
-        }        
+        }
     }
-
     buff_free(b);
     close(sock);
 
@@ -180,69 +185,93 @@ void bienvenue(struct buffer *b, struct pollfd *fds)
 	}
 }
 
-
-void negocier_pseudo(int sock, struct buffer *b, struct pollfd * fds)
-
+void negocier_pseudo(int sock, struct buffer *b, struct pollfd *fds)
 {
-    char pseudo[17];
-    char message[BUFSZ];
     char line[BUFSZ];
-
+    char message[BUFSZ];
 
     while(1)
     {
-        do
+        printf("Entrez la commande nickname (format: nickname pseudo) : ");
+        fflush(stdout);
+        
+        if(fgets(line, sizeof(line), stdin) == NULL)
         {
-            printf("Entrez votre pseudo (max de 16 caractères, sans ':') : ");
-
-            if(fgets(pseudo, sizeof(pseudo), stdin)== NULL)
-            {
-                printf("vous avez quitté le Freescord ! \n");   
-                close(sock);
-                buff_free(b);
-                exit(0);
-            }
-            
-            int trop_long = (strchr(pseudo, '\n') == NULL);
-            if(trop_long)
-            {
-                int c;
-                while((c = getchar()) != '\n' && c != EOF);
-            }
-            pseudo[strcspn(pseudo, "\n")] = '\0';
-
-            if(strlen(pseudo) == 0) printf("Pseudo vide, recommencez\n");
-            else if(trop_long) printf("Pseudo trop long, recommencez\n");
-            else if(strchr(pseudo, ':') != NULL) printf("Le caractère ':' est interdit\n");
-            else break;
-        } while(1);
-
-        //envoie de la demande nickname au serveur 
-        snprintf(message,sizeof(message),"nickname %s\n", pseudo);
-        char * converti = lf_to_crlf(message);
-        if(!converti) continue;
-        envoyer(sock,converti, (ssize_t)strlen(converti));
-        free(converti);
-
-        //lecture de la réponse du serveur
-        if(!buff_ready(b))
-        {
-            poll(fds, 1,-1);
-            if(remplir_buff(b) <= 0) break;
-        }
-        if(buff_fgets_crlf(b,line,sizeof(line)) == NULL) continue;
-
-        //le premier caractère est le code de réponse
-        char code = line[0];
-
-        if(code == '0')
-        {
-            printf("Pseudo '%s' accepte!\n",pseudo);
-            break;
+            printf("\nAu revoir !\n");
+            close(sock);
+            buff_free(b);
+            exit(0);
         }
         
-        else if(code == '1') printf("Pseudo déjà pris, prenez-en un autre\n");
-        else if(code == '2') printf("Pseudo invalide, prenez-en un autre\n");
-        else if(code == '3') printf("Commande invalide\n");
+        // Supprimer le \n de fin
+        line[strcspn(line, "\n")] = '\0';
+        
+        // Vérifier le format
+        if(strncmp(line, "nickname ", 9) != 0)
+        {
+            printf("Format invalide ! Utilisez: nickname pseudo\n");
+            continue;
+        }
+        
+        char *pseudo = line + 9;
+        
+        if(strlen(pseudo) == 0 || strlen(pseudo) > 16)
+        {
+            printf("Pseudo invalide (1-16 caractères)\n");
+            continue;
+        }
+        
+        if(strchr(pseudo, ':') != NULL)
+        {
+            printf("Le caractère ':' est interdit\n");
+            continue;
+        }
+        
+        // Envoyer au serveur
+        if(strlen(line) + 2 > sizeof(message))
+        {
+            printf("Commande trop longue\n");
+            continue;
+        }
+        strcpy(message, line);
+        strcat(message, "\n");
+        
+        char *converti = lf_to_crlf(message);
+        if(!converti) continue;
+        
+        envoyer(sock, converti, (ssize_t)strlen(converti));
+        free(converti);
+        
+        // Attendre la réponse
+        while(!buff_ready(b))
+        {
+            if(poll(fds, 1, -1) < 0) break;
+            if(remplir_buff(b) <= 0) return;
+        }
+        
+        // Lire la réponse
+        if(buff_fgets_crlf(b, line, sizeof(line)) == NULL) continue;
+        
+        // Supprimer le CRLF
+        line[strcspn(line, "\r\n")] = '\0';
+        
+        // Analyser la réponse
+        if(line[0] == '0')
+        {            
+            const char *msg = line;
+            if(line[1] == ' ') msg = line + 2;
+            else msg = line + 1;
+            
+            printf("%s\n", msg);
+            break;
+        }
+        else if(line[0] == '1')
+            printf("Pseudo déjà pris !\n");
+        else if(line[0] == '2')
+            printf("Pseudo invalide !\n");
+        else if(line[0] == '3')
+            printf("Commande invalide !\n");
+        else
+            printf("Réponse inattendue: %s\n", line);
     }
 }

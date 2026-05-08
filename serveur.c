@@ -133,8 +133,8 @@ int main(void)
 		}	
 
 
+		
 		pthread_mutex_lock(&users_mutex);
-
 		//vérifier si le serveur est plein
 		if(nb_client >= MAX_CLIENT)
 		{
@@ -162,13 +162,15 @@ int main(void)
 		}
 		pthread_detach(th);
 	}
+
+	close(tube[0]);
+	close(tube[1]);
 	
 	close(sock_l);
 	list_free(users,(void (*) (void * ))user_free);
 	pthread_mutex_destroy(&users_mutex);
 	return 0;
 }
-
 
 void * lecture_thread(void *arg)
 {
@@ -192,6 +194,7 @@ void * lecture_thread(void *arg)
 	}
 	return NULL;
 }
+
 
 int pseudo_deja_pris(char * pseudo)
 {
@@ -217,7 +220,6 @@ const char * mots_interdits[] = {"connard", "connasse", "salope", "pute", "batar
     "abruti", "abrutie", "imbecile", "cretin", "cretine",
     "bouffon", "bouffonne", "taré", "tare", "debile",
     "nique", "niquer", "ntm", "tg", "va te faire", "salaud", "salopard",
-    // noms réservés
     "admin", "root", "serveur", "moderateur", "modo",
     NULL};
 
@@ -260,11 +262,12 @@ void *handle_client(void *user)
 	{
 		n = read(t->sock, buff, BUFSZ - 1);
 		if(n <= 0) {
-
+			
 			deco = 1;
 			break;
 		}
 		buff[n] = '\0';
+		printf("[SERVEUR] : a reçu %s\n", buff);
 		buff[strcspn(buff, "\r\n")] = '\0';
 			
 		char reponse[BUFSZ];
@@ -293,7 +296,7 @@ void *handle_client(void *user)
 			continue;
 		}
  
-		//pseudo accepté, on l'assigne au client
+		//pseudo accepté, on le donne au client
 		t->nickname = strdup(pseudo);
 		snprintf(reponse, sizeof(reponse), "0 pseudo accepte\r\n");
 		write(t->sock, reponse, strlen(reponse));
@@ -302,18 +305,23 @@ void *handle_client(void *user)
  
 	//boucle de communication avec des clients connectés
 	if(!deco){
-		while((n = read(t->sock, buff, BUFSZ)) > 0)
+		while((n = read(t->sock, buff, BUFSZ - 1)) > 0)
 		{
-			char msg[BUFSZ * 2];
 			buff[n] = '\0';
-
-			// construire le message complet en une seule fois
+			for(int i = 0; i < n; i++)
+			{
+				if(buff[i] == '\n') printf("\\n");
+				else if(buff[i] == '\r') printf("\\r");
+				else printf("%c", buff[i]);
+			}
+			printf("\n");
+			
+			char msg[BUFSZ * 2];
 			int total = snprintf(msg, sizeof(msg), "%s: %s", t->nickname, buff);
 			if(total <= 0) continue;
-
+			
 			write(tube[1], msg, total);
 		}
-
 		if(n < 0) perror("read");
 	}
 
@@ -323,6 +331,8 @@ void *handle_client(void *user)
 		char message[BUFSZ];
 		int total = snprintf(message, sizeof(message), "%s a quitté Freescord !\r\n", t->nickname);
 		if(total > 0) write(tube[1],message,total);
+		free(t->nickname);
+		t->nickname=NULL;
 	}
 
 	pthread_mutex_lock(&users_mutex);

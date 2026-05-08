@@ -21,6 +21,16 @@ struct buffer {
 	int eof;
 };
 
+int remplir_buff(buffer *b)
+{
+	ssize_t n = read(b->fd, b->buff, sizeof(b->buff));
+	if(n < 0){ perror("read"); return -1; }
+	if(n == 0){ b->eof = 1; return 0; }
+	b->pos_curseur = 0;
+	b->taille_buffer = (int)n;
+	return (int)n;
+}
+
 buffer *buff_create(int fd, size_t buffsz)
 {
 	struct buffer * b = malloc(sizeof(struct buffer));
@@ -36,15 +46,6 @@ buffer *buff_create(int fd, size_t buffsz)
 	return b;
 }
 
-int remplir_buff(buffer *b)
-{
-    ssize_t n = read(b->fd, b->buff, sizeof(b->buff));
-    if(n < 0){ perror("read"); return -1; }
-    if(n == 0){ b->eof = 1; return 0; }
-    b->pos_curseur = 0;
-    b->taille_buffer = (int)n;
-    return (int)n;
-}
 
 int buff_getc(buffer *b)
 {
